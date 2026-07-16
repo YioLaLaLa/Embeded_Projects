@@ -18,6 +18,21 @@
 # Keil/MDK generated target directories
 spectrum/MDK-ARM/spectrum/
 
+# Large CMSIS example/test bundles not referenced by this project
+spectrum/Drivers/CMSIS/DSP/DSP_Lib_TestSuite/
+spectrum/Drivers/CMSIS/DSP/Examples/
+spectrum/Drivers/CMSIS/DSP/Source/*
+!spectrum/Drivers/CMSIS/DSP/Source/FilteringFunctions/
+spectrum/Drivers/CMSIS/DSP/Source/FilteringFunctions/*
+!spectrum/Drivers/CMSIS/DSP/Source/FilteringFunctions/arm_biquad_cascade_df1_f32.c
+!spectrum/Drivers/CMSIS/DSP/Source/FilteringFunctions/arm_biquad_cascade_df1_init_f32.c
+spectrum/Drivers/CMSIS/NN/
+spectrum/Drivers/CMSIS/Lib/ARM/
+
+# Keep only the DSP binary library used by the Keil project.
+spectrum/Middlewares/ST/ARM/DSP/Lib/*
+!spectrum/Middlewares/ST/ARM/DSP/Lib/arm_cortexM3l_math.lib
+
 # User and IDE local state
 *.uvguix.*
 *.uvgui.*
