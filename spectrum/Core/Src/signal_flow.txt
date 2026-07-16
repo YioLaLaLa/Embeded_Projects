@@ -1,0 +1,62 @@
+=== Signal Acquisition And Processing Flow ===
+
+System clock (72MHz)
+    -> TIM3 configuration (Prescaler=0, Period=1124)
+    -> TIM3 update frequency = 72MHz / (0 + 1) / (1124 + 1) = 64kHz
+    -> TIM3 TRGO update event triggers ADC1
+    -> ADC1 samples PA0
+    -> DMA stores samples into adcBuffer[128]
+    -> DMA half/full complete interrupts fire
+    -> HAL_ADC_ConvHalfCpltCallback / HAL_ADC_ConvCpltCallback set ready flags
+    -> Main loop calls ADC_ProcessorTask()
+        -> Process first 64 samples or second 64 samples
+        -> Compute block average, min, max, and realtime ADC value
+        -> Update smoothed DC estimate
+        -> Append samples into 1024-point waveform frame buffer
+        -> Every 1024 samples, compress waveform to 128 display columns
+        -> Feed samples into 1024-point FFT input buffer
+        -> Every 1024 samples, run FFT and update spectrum bars
+    -> UI_Process() handles key events
+    -> Display_Task() refreshes OLED pages
+
+=== Current Pages ===
+
+Menu page
+    - Waveform
+    - Spectrum
+    - Settings (placeholder only)
+    - Info
+
+Waveform page
+    - Shows dominant frequency estimate
+    - Shows realtime ADC count
+    - Draws a 128-column waveform line
+
+Spectrum page
+    - Shows peak level in dB relative to 3000mVpp at PA0
+    - Shows dominant frequency
+    - Draws 128 spectrum bars
+
+Info page
+    - Shows realtime ADC
+    - Shows smoothed DC value
+    - Shows block min/max
+
+=== Key Parameters ===
+
+Sample rate: 64kHz (TIM3 trigger)
+ADC buffer size: 128 samples
+Process block size: 64 samples
+Waveform frame size: 1024 samples
+Waveform display width: 128 columns
+FFT size: 1024
+Spectrum display width: 128 bars
+Displayed spectrum range: 0 to 20kHz (first 320 bins, 62.5Hz/bin)
+Display refresh interval: 30ms (~33Hz)
+
+=== Notes ===
+
+- The current code tracks DC with exponential smoothing; it does not use the older
+  "first 10 blocks calibration" flow.
+- The current ADC processing path does not apply dsp_filters.c in the runtime path.
+- The Settings page is still a placeholder and does not change runtime parameters.

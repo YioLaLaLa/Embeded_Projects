@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/Yio/Desktop/spectrum_display/**)",
+      "Bash(find c:/Users/Yio/Desktop/spectrum_display -name \"*.h\" -exec grep -l \"EXTERNALTRIG\" {} \\\\;)",
+      "Bash(del \"c:\\\\Users\\\\Yio\\\\Desktop\\\\spectrum_display\\\\spectrum\\\\Core\\\\Src\\\\waveform.c\")",
+      "Bash(\"C:/Keil_v5/UV4/UV4.exe\" -b spectrum.uvprojx)"
+    ]
+  }
+}
