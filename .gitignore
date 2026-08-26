@@ -13,10 +13,21 @@
 *.dep
 *.htm
 *.html
+*.sct
 *.build_log.htm
 
-# Keil/MDK generated target directories
-spectrum/MDK-ARM/spectrum/
+# MSVC host-side test build outputs
+*.exe
+*.ilk
+*.pdb
+*.idb
+vc*.pdb
+
+# Keil/MDK generated target directories (any project)
+Objects/
+Listings/
+DebugConfig/
+RTE/
 
 # Large CMSIS example/test bundles not referenced by this project
 spectrum/Drivers/CMSIS/DSP/DSP_Lib_TestSuite/
@@ -41,10 +52,8 @@ spectrum/Middlewares/ST/ARM/DSP/Lib/*
 *.tmp
 *.log
 *.lock
-.vscode/*.log
-spectrum/MDK-ARM/.vscode/*.log
-spectrum/MDK-ARM/.vscode/*.lock
-spectrum/MDK-ARM/.claude/settings.local.json
+.vscode/
+**/MDK-ARM/.claude/settings.local.json
 
 # OS files
 Thumbs.db
