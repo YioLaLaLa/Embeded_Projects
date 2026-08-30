@@ -1,7 +1,170 @@
 #include <stdint.h>
+#include "stm32f4xx.h"
+#include "stdbool.h"
+
+#define EEPROM_PAGE_SIZE 128
+#define EEPROM_ADDRESS 0xA0
+
+static void i2c_init(void)
+{
+	GPIO_InitTypeDef GPIO_InitStruct;
+	GPIO_StructInit(&GPIO_InitStruct);
+	GPIO_InitStruct.GPIO_Pin = GPIO_Pin_6 | GPIO_Pin_7;
+	GPIO_InitStruct.GPIO_Mode = GPIO_Mode_AF;
+	GPIO_InitStruct.GPIO_Speed = GPIO_High_Speed;
+	GPIO_InitStruct.GPIO_OType = GPIO_OType_OD;
+	GPIO_InitStruct.GPIO_PuPd = GPIO_PuPd_UP;
+	GPIO_Init(GPIOB, &GPIO_InitStruct);
+	
+	GPIO_PinAFConfig(GPIOB, GPIO_PinSource6, GPIO_AF_I2C1);
+	GPIO_PinAFConfig(GPIOB, GPIO_PinSource7, GPIO_AF_I2C1);
+
+	I2C_InitTypeDef I2C_InitStruct;
+	I2C_StructInit(&I2C_InitStruct);
+	I2C_InitStruct.I2C_ClockSpeed = 100000;
+	I2C_InitStruct.I2C_Mode = I2C_Mode_I2C;
+	I2C_InitStruct.I2C_DutyCycle = I2C_DutyCycle_2;
+	I2C_InitStruct.I2C_OwnAddress1 = 0x00;
+	I2C_InitStruct.I2C_Ack = I2C_Ack_Enable; // Enable ACKnowledgment
+	I2C_InitStruct.I2C_AcknowledgedAddress = I2C_AcknowledgedAddress_7bit; // 7-bit acknowledged address
+	I2C_Init(I2C1, &I2C_InitStruct);
+	I2C_Cmd(I2C1, ENABLE);
+}
+
+/* 等待标志达到目标状态：超时或从机不应答则恢复总线并返回 false */
+static bool i2c_wait_flag(I2C_TypeDef *I2Cx, uint32_t flag, FlagStatus target)
+{
+	uint32_t timeout = 100000;
+	while(I2C_GetFlagStatus(I2Cx, flag) != target)          // 还没达到目标状态 → 继续等
+	{
+		if(I2C_GetFlagStatus(I2Cx, I2C_FLAG_AF) == SET)
+		{
+			I2C_ClearFlag(I2Cx, I2C_FLAG_AF);               // 清除 NACK 标志
+			I2C_GenerateSTOP(I2Cx, ENABLE);
+			return false;
+		}
+		if(--timeout == 0)
+		{
+			I2C_GenerateSTOP(I2Cx, ENABLE);
+			return false;
+		}
+	}
+	return true;
+}
+
+static bool eeprom_page_write(uint16_t address, uint8_t data[], uint32_t length)
+{
+	/* 发送 START，等待总线空闲并产生起始条件 */
+	if(!i2c_wait_flag(I2C1, I2C_FLAG_BUSY, RESET)) return false;    // 等待总线空闲（上次写周期结束）
+	I2C_GenerateSTART(I2C1, ENABLE);
+	if(!i2c_wait_flag(I2C1, I2C_FLAG_SB, SET)) return false;    // 等待 SB 置位（起始条件已发送）
+
+	/* 发送设备地址（写方向），等待从机应答 */
+	I2C_Send7bitAddress(I2C1, EEPROM_ADDRESS, I2C_Direction_Transmitter);
+	if(!i2c_wait_flag(I2C1, I2C_FLAG_ADDR, SET)) return false;  // 等待 ADDR (地址匹配标志) 置位（从机已应答）
+	/*
+	关键机制——时钟拉伸：当 ADDR=1 且软件还没清除它时，I2C 外设会把 SCL 拉低（时钟拉伸），
+	让整个总线暂停，等软件处理。只有清掉 ADDR，外设才释放 SCL，后续数据传输才能继续。
+	*/
+	(void)I2C1->SR2;                                       // 前面读了SR1 现在再读 SR2 清除 ADDR，启动数据发送（兼确认写周期结束）
+
+	/* 发送 16 位存储地址 */
+	I2C_SendData(I2C1, (address >> 8) & 0xFF);
+	if(!i2c_wait_flag(I2C1, I2C_FLAG_TXE, SET)) return false;
+	I2C_SendData(I2C1, address & 0xFF);
+	if(!i2c_wait_flag(I2C1, I2C_FLAG_TXE, SET)) return false;
+
+	/* 逐字节发送数据 */
+	for(uint32_t i = 0; i < length; i++)
+	{
+		I2C_SendData(I2C1, data[i]);
+		if(!i2c_wait_flag(I2C1, I2C_FLAG_TXE, SET)) return false;
+	}
+
+	/*
+	原来等 TXE 只代表数据寄存器空，最后一个字节可能还在移位寄存器里往外发，此时发 STOP 会截断数据
+	等待最后一字节移出移位寄存器（BTF），再发 STOP
+	BTF（Byte Transfer Finished）才表示该字节连同应答已完整传输。
+	*/
+	if(!i2c_wait_flag(I2C1, I2C_FLAG_BTF, SET)) return false; //
+	I2C_GenerateSTOP(I2C1, ENABLE);
+	if(!i2c_wait_flag(I2C1, I2C_FLAG_STOPF, SET)) return false; // 等待 STOP 发送完成，总线释放
+	return true;
+}
+
+static bool eeprom_random_write(uint16_t address, uint8_t data[], uint32_t length)
+{
+	while(length > 0)
+	{
+		/* 本轮最多写到当前页末尾，防止跨页写入导致地址回卷 */
+		uint32_t chunk = EEPROM_PAGE_SIZE - (address % EEPROM_PAGE_SIZE);
+		if(chunk > length) chunk = length;
+		if(!eeprom_page_write(address, data, chunk)) return false;
+		address += chunk;
+		data    += chunk;
+		length  -= chunk;
+	}
+	return true;
+}
+
+static bool eeprom_random_read(uint16_t address, uint8_t data[], uint32_t length)
+{
+	if(length == 0) return true;                                    // 无需读取，直接成功（避免后续等不到 STOPF）
+
+	/* 阶段一：哑写，设置芯片内部地址指针 */
+	if(!i2c_wait_flag(I2C1, I2C_FLAG_BUSY, RESET)) return false;    // 等待总线空闲（上次写周期结束）
+	I2C_GenerateSTART(I2C1, ENABLE);
+	if(!i2c_wait_flag(I2C1, I2C_FLAG_SB, SET)) return false;        // 等待 SB 置位（起始条件已发送）
+	I2C_Send7bitAddress(I2C1, EEPROM_ADDRESS, I2C_Direction_Transmitter);
+	if(!i2c_wait_flag(I2C1, I2C_FLAG_ADDR, SET)) return false;      // 等待 ADDR 置位（从机已应答）
+	(void)I2C1->SR2;                                                // 读 SR2 清除 ADDR，启动地址发送（兼确认写周期结束）
+	I2C_SendData(I2C1, (address >> 8) & 0xFF);
+	if(!i2c_wait_flag(I2C1, I2C_FLAG_TXE, SET)) return false;
+	I2C_SendData(I2C1, address & 0xFF);
+	if(!i2c_wait_flag(I2C1, I2C_FLAG_TXE, SET)) return false;
+
+	/* 阶段二：重发 START，进入接收模式 */
+	I2C_AcknowledgeConfig(I2C1, ENABLE);
+	I2C_GenerateSTART(I2C1, ENABLE);                                // 重发 START（不发 STOP，地址指针保持）
+	if(!i2c_wait_flag(I2C1, I2C_FLAG_SB, SET)) return false;
+	I2C_Send7bitAddress(I2C1, EEPROM_ADDRESS, I2C_Direction_Receiver);
+	if(!i2c_wait_flag(I2C1, I2C_FLAG_ADDR, SET)) return false;
+
+	/*
+	每个字节的第 9 个时钟是发 ACK/NACK 的固定时刻，也是配置的截止线；
+	单字节时一清 ADDR 时钟就立刻开跑，只能借用清 ADDR 前时钟拉伸的无限窗口提前把 ACK=0 写好。
+	*/
+	if(length == 1)                                                 // 单字节：清 ADDR 前关 ACK 并发 STOP（手册规定的时序要求）
+	{
+		I2C_AcknowledgeConfig(I2C1, DISABLE);
+		I2C_GenerateSTOP(I2C1, ENABLE);
+	}
+	(void)I2C1->SR2;                                                // 读 SR2 清除 ADDR，释放 SCL，开始接收数据（兼确认地址匹配）
+
+	/*
+	读操作无页边界限制：芯片内部地址计数器可跨页连续递增不回卷，
+	因此任意长度一次读完，不需要像写那样分块循环。
+	*/
+	for(uint32_t i = 0; i < length; i++)
+	{
+		if(i == length - 1 && length > 1)                           // 最后一字节：关 ACK + STOP，通知从机停止发送（兼确认字节接收完成）
+		{
+			I2C_AcknowledgeConfig(I2C1, DISABLE);
+			I2C_GenerateSTOP(I2C1, ENABLE);
+		}
+		if(!i2c_wait_flag(I2C1, I2C_FLAG_RXNE, SET)) return false;  // 先等数据就绪（带超时与 NACK 保护）
+		data[i] = I2C_ReceiveData(I2C1);                            // 再读数据寄存器（兼清 RXNE）
+	}
+	if(!i2c_wait_flag(I2C1, I2C_FLAG_STOPF, SET)) return false;     // 等待 STOP 发送完成，总线释放（兼确认总线空闲）
+	I2C_AcknowledgeConfig(I2C1, ENABLE);                            // 恢复 ACK，供下次使用（兼确认外设状态）
+	return true;
+}
 
 int main(void)
 {
-	  while(1)
-		{;}
+	RCC_APB1PeriphClockCmd(RCC_APB1Periph_I2C1, ENABLE);
+	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOB, ENABLE);
+
+	while(1)
+	{;}
 }

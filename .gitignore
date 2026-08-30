@@ -55,6 +55,9 @@ spectrum/Middlewares/ST/ARM/DSP/Lib/*
 .vscode/
 **/MDK-ARM/.claude/settings.local.json
 
+# Large reference manuals
+I2C_test/datasheet/rm0090*.pdf
+
 # OS files
 Thumbs.db
 desktop.ini
