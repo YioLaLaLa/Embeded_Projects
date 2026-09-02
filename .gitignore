@@ -56,7 +56,7 @@ spectrum/Middlewares/ST/ARM/DSP/Lib/*
 **/MDK-ARM/.claude/settings.local.json
 
 # Large reference manuals
-I2C_test/datasheet/rm0090*.pdf
+project01/datasheet/rm0090*.pdf
 
 # OS files
 Thumbs.db

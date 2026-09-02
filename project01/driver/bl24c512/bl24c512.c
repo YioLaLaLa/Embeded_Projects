@@ -1,11 +1,11 @@
-#include <stdint.h>
+#include "bl24c512.h"
 #include "stm32f4xx.h"
 #include "stdbool.h"
 
-#define EEPROM_PAGE_SIZE 128
-#define EEPROM_ADDRESS 0xA0
+#define BL24C512_PAGE_SIZE 128
+#define BL24C512_ADDRESS 0xA0
 
-static void i2c_init(void)
+void BL24C512_Init(void)
 {
 	GPIO_InitTypeDef GPIO_InitStruct;
 	GPIO_StructInit(&GPIO_InitStruct);
@@ -32,7 +32,7 @@ static void i2c_init(void)
 }
 
 /* 等待标志达到目标状态：超时或从机不应答则恢复总线并返回 false */
-static bool i2c_wait_flag(I2C_TypeDef *I2Cx, uint32_t flag, FlagStatus target)
+bool i2c_wait_flag(I2C_TypeDef *I2Cx, uint32_t flag, FlagStatus target)
 {
 	uint32_t timeout = 100000;
 	while(I2C_GetFlagStatus(I2Cx, flag) != target)          // 还没达到目标状态 → 继续等
@@ -52,7 +52,7 @@ static bool i2c_wait_flag(I2C_TypeDef *I2Cx, uint32_t flag, FlagStatus target)
 	return true;
 }
 
-static bool eeprom_page_write(uint16_t address, uint8_t data[], uint32_t length)
+bool BL24C512_PageWrite(uint16_t address, uint8_t data[], uint32_t length)
 {
 	/* 发送 START，等待总线空闲并产生起始条件 */
 	if(!i2c_wait_flag(I2C1, I2C_FLAG_BUSY, RESET)) return false;    // 等待总线空闲（上次写周期结束）
@@ -60,7 +60,7 @@ static bool eeprom_page_write(uint16_t address, uint8_t data[], uint32_t length)
 	if(!i2c_wait_flag(I2C1, I2C_FLAG_SB, SET)) return false;    // 等待 SB 置位（起始条件已发送）
 
 	/* 发送设备地址（写方向），等待从机应答 */
-	I2C_Send7bitAddress(I2C1, EEPROM_ADDRESS, I2C_Direction_Transmitter);
+	I2C_Send7bitAddress(I2C1, BL24C512_ADDRESS, I2C_Direction_Transmitter);
 	if(!i2c_wait_flag(I2C1, I2C_FLAG_ADDR, SET)) return false;  // 等待 ADDR (地址匹配标志) 置位（从机已应答）
 	/*
 	关键机制——时钟拉伸：当 ADDR=1 且软件还没清除它时，I2C 外设会把 SCL 拉低（时钟拉伸），
@@ -92,14 +92,14 @@ static bool eeprom_page_write(uint16_t address, uint8_t data[], uint32_t length)
 	return true;
 }
 
-static bool eeprom_random_write(uint16_t address, uint8_t data[], uint32_t length)
+bool BL24C512_write(uint16_t address, uint8_t data[], uint32_t length)
 {
 	while(length > 0)
 	{
 		/* 本轮最多写到当前页末尾，防止跨页写入导致地址回卷 */
-		uint32_t chunk = EEPROM_PAGE_SIZE - (address % EEPROM_PAGE_SIZE);
+		uint32_t chunk = BL24C512_PAGE_SIZE - (address % BL24C512_PAGE_SIZE);
 		if(chunk > length) chunk = length;
-		if(!eeprom_page_write(address, data, chunk)) return false;
+		if(!BL24C512_PageWrite(address, data, chunk)) return false;
 		address += chunk;
 		data    += chunk;
 		length  -= chunk;
@@ -107,7 +107,7 @@ static bool eeprom_random_write(uint16_t address, uint8_t data[], uint32_t lengt
 	return true;
 }
 
-static bool eeprom_random_read(uint16_t address, uint8_t data[], uint32_t length)
+bool BL24C512_read(uint16_t address, uint8_t data[], uint32_t length)
 {
 	if(length == 0) return true;                                    // 无需读取，直接成功（避免后续等不到 STOPF）
 
@@ -115,7 +115,7 @@ static bool eeprom_random_read(uint16_t address, uint8_t data[], uint32_t length
 	if(!i2c_wait_flag(I2C1, I2C_FLAG_BUSY, RESET)) return false;    // 等待总线空闲（上次写周期结束）
 	I2C_GenerateSTART(I2C1, ENABLE);
 	if(!i2c_wait_flag(I2C1, I2C_FLAG_SB, SET)) return false;        // 等待 SB 置位（起始条件已发送）
-	I2C_Send7bitAddress(I2C1, EEPROM_ADDRESS, I2C_Direction_Transmitter);
+	I2C_Send7bitAddress(I2C1, BL24C512_ADDRESS, I2C_Direction_Transmitter);
 	if(!i2c_wait_flag(I2C1, I2C_FLAG_ADDR, SET)) return false;      // 等待 ADDR 置位（从机已应答）
 	(void)I2C1->SR2;                                                // 读 SR2 清除 ADDR，启动地址发送（兼确认写周期结束）
 	I2C_SendData(I2C1, (address >> 8) & 0xFF);
@@ -127,7 +127,7 @@ static bool eeprom_random_read(uint16_t address, uint8_t data[], uint32_t length
 	I2C_AcknowledgeConfig(I2C1, ENABLE);
 	I2C_GenerateSTART(I2C1, ENABLE);                                // 重发 START（不发 STOP，地址指针保持）
 	if(!i2c_wait_flag(I2C1, I2C_FLAG_SB, SET)) return false;
-	I2C_Send7bitAddress(I2C1, EEPROM_ADDRESS, I2C_Direction_Receiver);
+	I2C_Send7bitAddress(I2C1, BL24C512_ADDRESS, I2C_Direction_Receiver);
 	if(!i2c_wait_flag(I2C1, I2C_FLAG_ADDR, SET)) return false;
 
 	/*
@@ -158,13 +158,4 @@ static bool eeprom_random_read(uint16_t address, uint8_t data[], uint32_t length
 	if(!i2c_wait_flag(I2C1, I2C_FLAG_STOPF, SET)) return false;     // 等待 STOP 发送完成，总线释放（兼确认总线空闲）
 	I2C_AcknowledgeConfig(I2C1, ENABLE);                            // 恢复 ACK，供下次使用（兼确认外设状态）
 	return true;
-}
-
-int main(void)
-{
-	RCC_APB1PeriphClockCmd(RCC_APB1Periph_I2C1, ENABLE);
-	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOB, ENABLE);
-
-	while(1)
-	{;}
 }
