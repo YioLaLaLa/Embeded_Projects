@@ -336,7 +336,7 @@
               <MiscControls></MiscControls>
               <Define>STM32F40_41xxx,USE_STDPERIPH_DRIVER,HSE_VALUE=8000000</Define>
               <Undefine></Undefine>
-              <IncludePath>..\firmware\cmsis\core;..\firmware\cmsis\device;..\firmware\driver\inc</IncludePath>
+              <IncludePath>..\firmware\cmsis\core;..\firmware\cmsis\device;..\firmware\driver\inc;..\driver\bl24c512;..\driver\usart</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -389,6 +389,28 @@
         </Group>
         <Group>
           <GroupName>driver</GroupName>
+          <Files>
+            <File>
+              <FileName>bl24c512.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\driver\bl24c512\bl24c512.c</FilePath>
+            </File>
+            <File>
+              <FileName>bl24c512.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\driver\bl24c512\bl24c512.h</FilePath>
+            </File>
+            <File>
+              <FileName>usart.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\driver\usart\usart.c</FilePath>
+            </File>
+            <File>
+              <FileName>usart.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\driver\usart\usart.h</FilePath>
+            </File>
+          </Files>
         </Group>
         <Group>
           <GroupName>firmware/cmsis</GroupName>
