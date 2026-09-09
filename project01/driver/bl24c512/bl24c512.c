@@ -1,56 +1,10 @@
 #include "bl24c512.h"
+#include "i2c.h"
 #include "stm32f4xx.h"
 #include "stdbool.h"
 
 #define BL24C512_PAGE_SIZE 128
 #define BL24C512_ADDRESS 0xA0
-
-void BL24C512_Init(void)
-{
-	GPIO_InitTypeDef GPIO_InitStruct;
-	GPIO_StructInit(&GPIO_InitStruct);
-	GPIO_InitStruct.GPIO_Pin = GPIO_Pin_6 | GPIO_Pin_7;
-	GPIO_InitStruct.GPIO_Mode = GPIO_Mode_AF;
-	GPIO_InitStruct.GPIO_Speed = GPIO_High_Speed;
-	GPIO_InitStruct.GPIO_OType = GPIO_OType_OD;
-	GPIO_InitStruct.GPIO_PuPd = GPIO_PuPd_UP;
-	GPIO_Init(GPIOB, &GPIO_InitStruct);
-	
-	GPIO_PinAFConfig(GPIOB, GPIO_PinSource6, GPIO_AF_I2C1);
-	GPIO_PinAFConfig(GPIOB, GPIO_PinSource7, GPIO_AF_I2C1);
-
-	I2C_InitTypeDef I2C_InitStruct;
-	I2C_StructInit(&I2C_InitStruct);
-	I2C_InitStruct.I2C_ClockSpeed = 100000;
-	I2C_InitStruct.I2C_Mode = I2C_Mode_I2C;
-	I2C_InitStruct.I2C_DutyCycle = I2C_DutyCycle_2;
-	I2C_InitStruct.I2C_OwnAddress1 = 0x00;
-	I2C_InitStruct.I2C_Ack = I2C_Ack_Enable; // Enable ACKnowledgment
-	I2C_InitStruct.I2C_AcknowledgedAddress = I2C_AcknowledgedAddress_7bit; // 7-bit acknowledged address
-	I2C_Init(I2C1, &I2C_InitStruct);
-	I2C_Cmd(I2C1, ENABLE);
-}
-
-/* 等待标志达到目标状态：超时或从机不应答则恢复总线并返回 false */
-bool i2c_wait_flag(I2C_TypeDef *I2Cx, uint32_t flag, FlagStatus target)
-{
-	uint32_t timeout = 100000;
-	while(I2C_GetFlagStatus(I2Cx, flag) != target)          // 还没达到目标状态 → 继续等
-	{
-		if(I2C_GetFlagStatus(I2Cx, I2C_FLAG_AF) == SET)
-		{
-			I2C_ClearFlag(I2Cx, I2C_FLAG_AF);               // 清除 NACK 标志
-			I2C_GenerateSTOP(I2Cx, ENABLE);
-			return false;
-		}
-		if(--timeout == 0)
-		{
-			I2C_GenerateSTOP(I2Cx, ENABLE);
-			return false;
-		}
-	}
-	return true;
-}
 
 bool BL24C512_PageWrite(uint16_t address, uint8_t data[], uint32_t length)
 {
