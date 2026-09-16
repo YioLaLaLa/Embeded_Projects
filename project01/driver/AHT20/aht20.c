@@ -11,7 +11,7 @@
 /* 读状态字节：AHT20 每次读事务返回的第一个字节即状态 */
 bool AHT20_ReadStatus(uint8_t *status)
 {
-	return i2c_read(I2C1, AHT20_ADDR, status, 1);
+	return i2c_read(&i2c1_bus, AHT20_ADDR, status, 1);
 }
 
 /* 上电初始化：延时稳定 → 读状态 → 未校准则发初始化命令 0xBE 0x08 0x00 */
@@ -24,7 +24,7 @@ bool AHT20_Init(void)
 	if(!AHT20_ReadStatus(&status)) return false;    // 初始化前先读一次状态
 	if((status & AHT20_STATUS_CAL) == 0)            // bit3=0 → 未校准，需发初始化命令
 	{
-		if(!i2c_write(I2C1, AHT20_ADDR, cmd, 3)) return false;
+		if(!i2c_write(&i2c1_bus, AHT20_ADDR, cmd, 3)) return false;
 		Delay_ms(10);                               // 初始化命令后 ≥10ms
 	}
 	return true;
@@ -37,10 +37,10 @@ bool AHT20_Read(float *humidity, float *temperature)
 	uint8_t buf[6];                                 // buf[0]=状态，buf[1..5]=数据（忽略第 7 字节 CRC）
 	uint32_t hum_raw, temp_raw;
 
-	if(!i2c_write(I2C1, AHT20_ADDR, cmd, 3)) return false;   // 触发一次测量
+	if(!i2c_write(&i2c1_bus, AHT20_ADDR, cmd, 3)) return false;   // 触发一次测量
 	Delay_ms(80);                                   // 测量需 ≥75ms，等 80ms 稳妥
 
-	if(!i2c_read(I2C1, AHT20_ADDR, buf, 6)) return false;    // 读状态 + 5 字节数据
+	if(!i2c_read(&i2c1_bus, AHT20_ADDR, buf, 6)) return false;    // 读状态 + 5 字节数据
 	if(buf[0] & AHT20_STATUS_BUSY) return false;    // 仍在忙 → 本次数据无效
 
 	/* 20 位湿度 = buf[1] buf[2] buf[3]高4位；20 位温度 = buf[3]低4位 buf[4] buf[5] */
