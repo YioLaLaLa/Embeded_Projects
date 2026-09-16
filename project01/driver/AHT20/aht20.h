@@ -8,7 +8,8 @@
 /*
 AHT20 温湿度传感器（I2C，7 位地址 0x38）
 依赖：driver/I2C（i2c_write/i2c_read）、driver/delay（Delay_ms）
-用前须先调用 I2C1_Init() 和 Delay_Init()。
+总线：默认走 i2c.c 里的 i2c1_bus（I2C1，PB6=SCL PB7=SDA）；换引脚改 i2c1_bus 即可。
+用前须先调用 i2c_init(&i2c1_bus) 和 Delay_Init()。
 */
 
 /* 上电初始化：延时稳定 → 读状态 → 若未校准则发初始化命令。成功返回 true */
