@@ -59,11 +59,12 @@ void st7789_write_data(uint8_t data)
     CS_HIGH();
 }
 
-/* 控制引脚 GPIO 初始化：CS/RST/BLK 在 GPIOB，DC 在 GPIOC，推挽输出 */
+/* 控制引脚 GPIO 初始化：CS/BLK 在 GPIOB，DC 在 GPIOC，RST 在 GPIOD，推挽输出 */
 static void st7789_gpio_init(void)
 {
     RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOB, ENABLE);
     RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOC, ENABLE);   /* DC 在 GPIOC */
+    RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOD, ENABLE);   /* RST 在 GPIOD */
 
     GPIO_InitTypeDef g;
     GPIO_StructInit(&g);
@@ -72,10 +73,12 @@ static void st7789_gpio_init(void)
     g.GPIO_Speed = GPIO_High_Speed;
     g.GPIO_PuPd  = GPIO_PuPd_NOPULL;
 
-    g.GPIO_Pin = ST7789_CS_PIN | ST7789_RST_PIN | ST7789_BLK_PIN;   /* GPIOB: CS/RST/BLK */
+    g.GPIO_Pin = ST7789_CS_PIN | ST7789_BLK_PIN;            /* GPIOB: CS/BLK */
     GPIO_Init(GPIOB, &g);
-    g.GPIO_Pin = ST7789_DC_PIN;                                     /* GPIOC: DC */
+    g.GPIO_Pin = ST7789_DC_PIN;                             /* GPIOC: DC */
     GPIO_Init(GPIOC, &g);
+    g.GPIO_Pin = ST7789_RST_PIN;                            /* GPIOD: RST */
+    GPIO_Init(GPIOD, &g);
 
     CS_HIGH();      /* CS 默认未选中 */
     RST_HIGH();
@@ -193,6 +196,48 @@ void st7789_fill(uint16_t color)
     {
         spi_rw(&lcd_spi, hi);                 /* 每像素 2 字节 */
         spi_rw(&lcd_spi, lo);
+    }
+    CS_HIGH();
+}
+
+/* 在指定矩形区域 (x0,y0)-(x1,y1) 填充单一颜色（复用 set_window 框局部窗口）*/
+void st7789_fill_rect(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t color)
+{
+    st7789_set_window(x0, y0, x1, y1);
+
+    uint8_t hi = (uint8_t)(color >> 8);
+    uint8_t lo = (uint8_t)(color & 0xFF);
+    uint32_t total = (uint32_t)(x1 - x0 + 1) * (y1 - y0 + 1);   /* 窗口内像素数 */
+
+    CS_LOW();
+    DC_DAT();
+    for(uint32_t i = 0; i < total; i++)
+    {
+        spi_rw(&lcd_spi, hi);
+        spi_rw(&lcd_spi, lo);
+    }
+    CS_HIGH();
+}
+
+/* 在 (x,y) 画 w×h 单色位图：bit=1 用 fg，bit=0 用 bg（行列式/MSB先）*/
+void st7789_draw_bitmap(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
+                        const uint8_t *bmp, uint16_t fg, uint16_t bg)
+{
+    st7789_set_window(x, y, x + w - 1, y + h - 1);
+
+    uint16_t row_bytes = (w + 7) / 8;              /* 每行字节数 */
+    CS_LOW();
+    DC_DAT();
+    for(uint16_t r = 0; r < h; r++)
+    {
+        for(uint16_t c = 0; c < w; c++)
+        {
+            uint8_t byte = bmp[r * row_bytes + c / 8];
+            uint8_t bit  = (byte >> (7 - c % 8)) & 0x01;   /* MSB first */
+            uint16_t color = bit ? fg : bg;
+            spi_rw(&lcd_spi, (uint8_t)(color >> 8));
+            spi_rw(&lcd_spi, (uint8_t)(color & 0xFF));
+        }
     }
     CS_HIGH();
 }
