@@ -336,7 +336,7 @@
               <MiscControls></MiscControls>
               <Define>STM32F40_41xxx,USE_STDPERIPH_DRIVER,HSE_VALUE=8000000</Define>
               <Undefine></Undefine>
-              <IncludePath>..\firmware\cmsis\core;..\firmware\cmsis\device;..\firmware\driver\inc;..\driver\bl24c512;..\driver\usart</IncludePath>
+              <IncludePath>..\firmware\cmsis\core;..\firmware\cmsis\device;..\firmware\driver\inc;..\driver\bl24c512;..\driver\usart;..\driver\I2C;..\driver\AHT20;..\driver\delay;..\driver\SPI;..\driver\st7789;..\driver\font</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -409,6 +409,81 @@
               <FileName>usart.h</FileName>
               <FileType>5</FileType>
               <FilePath>..\driver\usart\usart.h</FilePath>
+            </File>
+            <File>
+              <FileName>i2c.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\driver\I2C\i2c.c</FilePath>
+            </File>
+            <File>
+              <FileName>i2c.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\driver\I2C\i2c.h</FilePath>
+            </File>
+            <File>
+              <FileName>aht20.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\driver\AHT20\aht20.c</FilePath>
+            </File>
+            <File>
+              <FileName>aht20.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\driver\AHT20\aht20.h</FilePath>
+            </File>
+            <File>
+              <FileName>delay.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\driver\delay\delay.c</FilePath>
+            </File>
+            <File>
+              <FileName>delay.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\driver\delay\delay.h</FilePath>
+            </File>
+            <File>
+              <FileName>SPI.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\driver\SPI\SPI.c</FilePath>
+            </File>
+            <File>
+              <FileName>SPI.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\driver\SPI\SPI.h</FilePath>
+            </File>
+            <File>
+              <FileName>st7789.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\driver\st7789\st7789.c</FilePath>
+            </File>
+            <File>
+              <FileName>st7789.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\driver\st7789\st7789.h</FilePath>
+            </File>
+            <File>
+              <FileName>font.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\driver\font\font.c</FilePath>
+            </File>
+            <File>
+              <FileName>font.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\driver\font\font.h</FilePath>
+            </File>
+            <File>
+              <FileName>font16.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\driver\font\font16.c</FilePath>
+            </File>
+            <File>
+              <FileName>font32.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\driver\font\font32.c</FilePath>
+            </File>
+            <File>
+              <FileName>font48.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\driver\font\font48.c</FilePath>
             </File>
           </Files>
         </Group>
