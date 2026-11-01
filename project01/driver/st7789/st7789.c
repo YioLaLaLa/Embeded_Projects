@@ -241,3 +241,21 @@ void st7789_draw_bitmap(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
     }
     CS_HIGH();
 }
+
+/* 在 (x,y) 画 w×h 全彩位图：img 是 RGB565 字节流(每像素2字节)。
+   取模软件导出为小端(低字节在前)，而 ST7789 要高字节先发，故每像素交换两字节。
+   若交换后红蓝仍互反，则是面板 RGB/BGR 问题，改 MADCTL(ST7789_ORIENTATION) 的 BGR 位。*/
+void st7789_draw_rgb(uint16_t x, uint16_t y, uint16_t w, uint16_t h, const uint8_t *img)
+{
+    st7789_set_window(x, y, x + w - 1, y + h - 1);
+
+    uint32_t pixels = (uint32_t)w * h;   /* 像素数 */
+    CS_LOW();
+    DC_DAT();
+    for(uint32_t i = 0; i < pixels; i++)
+    {
+        spi_rw(&lcd_spi, img[i * 2 + 1]);   /* 先发数组里的第二字节(高字节) */
+        spi_rw(&lcd_spi, img[i * 2]);       /* 再发第一字节(低字节) */
+    }
+    CS_HIGH();
+}

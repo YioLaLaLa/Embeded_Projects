@@ -4,13 +4,14 @@
 #include "usart.h"
 #include "st7789.h"
 #include "font.h"
+#include "image.h"
 
-/* ===== ST7789 LCD å­—ç¬¦æ˜¾ç¤ºæµ‹è¯•ï¼š16x32 å­—åº“ ===== */
+/* ===== ST7789 LCD ×Ö·ûÏÔÊ¾²âÊÔ£º16x32 ×Ö¿â ===== */
 
 int main(void)
 {
-	Delay_Init();          /* st7789_init ä¾èµ– Delay_msï¼Œå¿…é¡»å…ˆåˆå§‹åŒ– */
-	USART1_Init();         /* è°ƒè¯•ä¸²å£ï¼Œæ‰“å°çŠ¶æ€ */
+	Delay_Init();          /* st7789_init ÒÀÀµ Delay_ms£¬±ØÐëÏÈ³õÊ¼»¯ */
+	USART1_Init();         /* µ÷ÊÔ´®¿Ú£¬´òÓ¡×´Ì¬ */
 
 	USART1_SendString("\r\n===== ST7789 LCD Test =====\r\n");
 	USART1_SendString("SPI2: SCK=PB13 MOSI=PB15 | CS=PB12 DC=PC5 RST=PD8 BLK=PB1\r\n");
@@ -18,13 +19,16 @@ int main(void)
 	st7789_init();
 	USART1_SendString("ST7789 init done, showing text...\r\n");
 
-	st7789_fill(ST7789_BLACK);                                          /* æ¸…å± */
-	font_show_string(10,  10,  "Size 16", ST7789_WHITE, ST7789_BLACK, 16);
-	font_show_string(10,  40,  "Size 32", ST7789_RED,   ST7789_BLACK, 32);
-	font_show_string(10,  90,  "Size 48", ST7789_GREEN, ST7789_BLACK, 48);
+	st7789_fill(ST7789_BLACK);              /* ÇåÆÁ */
+
+	/* »­È«²ÊÍ¼Æ¬: Ã¨Í¼ 240x240 ·ÅÆÁÄ»¶¥²¿ (0,0), RGB565 Öð×Ö½ÚÍÆ¸øÆÁ */
+	st7789_draw_rgb(0, 0, IMG_CAT_W, IMG_CAT_H, gImage_cat_photo);
+
+	/* µ×²¿ y>=240 Áô°×Çø·ÅÒ»ÐÐÓ¢ÎÄ±êÇ©(ÖÐÎÄ×ÖÌåÒÑµ¥¶ÀÑéÖ¤¹ý) */
+	font_show_string(10, 250, "Cat 240x240", ST7789_WHITE, ST7789_BLACK, 16);
 
 	while(1)
 	{
-		/* é™æ€ç”»é¢ï¼Œç©ºè½¬ */
+		/* ¾²Ì¬»­Ãæ£¬¿Õ×ª */
 	}
 }
