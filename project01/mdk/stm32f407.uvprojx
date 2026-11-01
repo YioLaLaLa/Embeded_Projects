@@ -336,7 +336,7 @@
               <MiscControls></MiscControls>
               <Define>STM32F40_41xxx,USE_STDPERIPH_DRIVER,HSE_VALUE=8000000</Define>
               <Undefine></Undefine>
-              <IncludePath>..\firmware\cmsis\core;..\firmware\cmsis\device;..\firmware\driver\inc;..\driver\bl24c512;..\driver\usart;..\driver\I2C;..\driver\AHT20;..\driver\delay;..\driver\SPI;..\driver\st7789;..\driver\font</IncludePath>
+              <IncludePath>..\firmware\cmsis\core;..\firmware\cmsis\device;..\firmware\driver\inc;..\driver\bl24c512;..\driver\usart;..\driver\I2C;..\driver\AHT20;..\driver\delay;..\driver\SPI;..\driver\st7789;..\driver\font;..\driver\image</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -484,6 +484,16 @@
               <FileName>font48.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\driver\font\font48.c</FilePath>
+            </File>
+            <File>
+              <FileName>cat_photo.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\driver\image\cat_photo.c</FilePath>
+            </File>
+            <File>
+              <FileName>image.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\driver\image\image.h</FilePath>
             </File>
           </Files>
         </Group>

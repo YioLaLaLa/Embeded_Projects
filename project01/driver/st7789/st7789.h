@@ -33,6 +33,8 @@ void st7789_fill(uint16_t color);       /* 用单一颜色(RGB565)填充整屏 *
 void st7789_fill_rect(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t color);  /* 指定矩形区域填色 */
 void st7789_draw_bitmap(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
                         const uint8_t *bmp, uint16_t fg, uint16_t bg);   /* 单色位图→双色像素 */
+void st7789_draw_rgb(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
+                     const uint8_t *img);            /* RGB565 全彩位图→逐像素 */
 
 /* RGB565 常用颜色 */
 #define ST7789_BLACK   0x0000

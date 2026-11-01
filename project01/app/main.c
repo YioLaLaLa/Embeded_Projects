@@ -4,6 +4,7 @@
 #include "usart.h"
 #include "st7789.h"
 #include "font.h"
+#include "image.h"
 
 /* ===== ST7789 LCD 字符显示测试：16x32 字库 ===== */
 
@@ -18,14 +19,13 @@ int main(void)
 	st7789_init();
 	USART1_SendString("ST7789 init done, showing text...\r\n");
 
-	st7789_fill(ST7789_BLACK);                                          /* 清屏 */
-	font_show_string(10,  10,  "Size 16", ST7789_WHITE, ST7789_BLACK, 16);
-	font_show_string(10,  40,  "Size 32", ST7789_RED,   ST7789_BLACK, 32);
-	font_show_string(10,  90,  "Size 48", ST7789_GREEN, ST7789_BLACK, 48);
+	st7789_fill(ST7789_BLACK);              /* 清屏 */
 
-	/* 中文验证：同一个 font_show_string 直接传字符串(UTF-8)，自动解码 + 查码点→索引 */
-	font_show_string(10, 160, "今天晴",     ST7789_YELLOW, ST7789_BLACK, 32);
-	font_show_string(10, 210, "多云 25度", ST7789_CYAN,   ST7789_BLACK, 16);
+	/* 画全彩图片: 猫图 240x240 放屏幕顶部 (0,0), RGB565 逐字节推给屏 */
+	st7789_draw_rgb(0, 0, IMG_CAT_W, IMG_CAT_H, gImage_cat_photo);
+
+	/* 底部 y>=240 留白区放一行英文标签(中文字体已单独验证过) */
+	font_show_string(10, 250, "Cat 240x240", ST7789_WHITE, ST7789_BLACK, 16);
 
 	while(1)
 	{
