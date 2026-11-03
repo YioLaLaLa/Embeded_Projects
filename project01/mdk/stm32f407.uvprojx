@@ -336,7 +336,7 @@
               <MiscControls></MiscControls>
               <Define>STM32F40_41xxx,USE_STDPERIPH_DRIVER,HSE_VALUE=8000000</Define>
               <Undefine></Undefine>
-              <IncludePath>..\firmware\cmsis\core;..\firmware\cmsis\device;..\firmware\driver\inc;..\driver\bl24c512;..\driver\usart;..\driver\I2C;..\driver\AHT20;..\driver\delay;..\driver\SPI;..\driver\st7789;..\driver\font;..\driver\image</IncludePath>
+              <IncludePath>..\firmware\cmsis\core;..\firmware\cmsis\device;..\firmware\driver\inc;..\driver\bl24c512;..\driver\usart;..\driver\I2C;..\driver\AHT20;..\driver\delay;..\driver\SPI;..\driver\st7789;..\driver\font;..\driver\image;..\driver\esp32</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -494,6 +494,16 @@
               <FileName>image.h</FileName>
               <FileType>5</FileType>
               <FilePath>..\driver\image\image.h</FilePath>
+            </File>
+            <File>
+              <FileName>esp32.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\driver\esp32\esp32.c</FilePath>
+            </File>
+            <File>
+              <FileName>esp32.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\driver\esp32\esp32.h</FilePath>
             </File>
           </Files>
         </Group>
