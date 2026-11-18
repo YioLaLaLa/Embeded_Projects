@@ -3,25 +3,26 @@
 #include "delay.h"
 #include "stm32f4xx.h"
 #include "stdbool.h"
+#include <stddef.h>   /* NULL */
 
 #define AHT20_ADDR        0x70   // 7 位地址 0x38 左移 1 位（8 位写地址）；读地址 0x71 由 i2c_read 内部处理
 #define AHT20_STATUS_BUSY 0x80   // 状态字节 bit7：1 = 测量中（忙）
 #define AHT20_STATUS_CAL  0x08   // 状态字节 bit3：1 = 已校准
 
 /* 读状态字节：AHT20 每次读事务返回的第一个字节即状态 */
-bool AHT20_ReadStatus(uint8_t *status)
+static bool aht20_read_status(uint8_t *status)
 {
 	return i2c_read(&i2c1_bus, AHT20_ADDR, status, 1);
 }
 
 /* 上电初始化：延时稳定 → 读状态 → 未校准则发初始化命令 0xBE 0x08 0x00 */
-bool AHT20_Init(void)
+static bool aht20_init(void)
 {
 	uint8_t status = 0;
 	uint8_t cmd[3] = { 0xBE, 0x08, 0x00 };          // 初始化/校准命令
 
 	Delay_ms(100);                                  // 上电稳定 ≥100ms（datasheet 要求）
-	if(!AHT20_ReadStatus(&status)) return false;    // 初始化前先读一次状态
+	if(!aht20_read_status(&status)) return false;   // 初始化前先读一次状态
 	if((status & AHT20_STATUS_CAL) == 0)            // bit3=0 → 未校准，需发初始化命令
 	{
 		if(!i2c_write(&i2c1_bus, AHT20_ADDR, cmd, 3)) return false;
@@ -31,12 +32,13 @@ bool AHT20_Init(void)
 }
 
 /* 触发测量 → 等待完成 → 读 6 字节 → 拼 20bit 原始值 → 换算成 RH% 和 °C */
-bool AHT20_Read(float *humidity, float *temperature)
+static bool aht20_read(float *humidity, float *temperature)
 {
 	uint8_t cmd[3] = { 0xAC, 0x33, 0x00 };          // 触发测量命令
 	uint8_t buf[6];                                 // buf[0]=状态，buf[1..5]=数据（忽略第 7 字节 CRC）
 	uint32_t hum_raw, temp_raw;
 
+	if(humidity == NULL || temperature == NULL) return false;
 	if(!i2c_write(&i2c1_bus, AHT20_ADDR, cmd, 3)) return false;   // 触发一次测量
 	Delay_ms(80);                                   // 测量需 ≥75ms，等 80ms 稳妥
 
@@ -51,3 +53,6 @@ bool AHT20_Read(float *humidity, float *temperature)
 	*temperature = (float)temp_raw * 200.0f / 1048576.0f - 50.0f; // T°C = raw / 2^20 × 200 − 50
 	return true;
 }
+
+/* 对外只暴露接口实例 */
+const sensor_t aht20_sensor = { "AHT20", aht20_init, aht20_read };
