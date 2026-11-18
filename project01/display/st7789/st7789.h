@@ -35,6 +35,12 @@ void st7789_draw_bitmap(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
                         const uint8_t *bmp, uint16_t fg, uint16_t bg);   /* 单色位图→双色像素 */
 void st7789_draw_rgb(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
                      const uint8_t *img);            /* RGB565 全彩位图→逐像素 */
+void st7789_draw_rgb_transparent(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
+                     const uint8_t *img, uint16_t key);  /* 色键透明：等于key色的像素不画 */
+void st7789_draw_bitmap_transparent(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
+                     const uint8_t *bmp, uint16_t fg);   /* 只画bit=1笔画，bit=0透明 */
+void st7789_restore_bg(const uint8_t *img, uint16_t img_w,
+                     uint16_t x, uint16_t y, uint16_t w, uint16_t h); /* 用背景图子区域擦除残影 */
 
 /* RGB565 常用颜色 */
 #define ST7789_BLACK   0x0000

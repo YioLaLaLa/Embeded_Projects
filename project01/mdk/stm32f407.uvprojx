@@ -37,7 +37,7 @@
           <bCustSvd>0</bCustSvd>
           <UseEnv>0</UseEnv>
           <BinPath></BinPath>
-          <IncludePath></IncludePath>
+          <IncludePath>..\board;..\firmware\cmsis\core;..\firmware\cmsis\device;..\firmware\driver\inc;..\driver\usart;..\driver\I2C;..\driver\AHT20;..\driver\delay;..\driver\SPI;..\display\st7789;..\display\font;..\display\image;..\driver\esp32;..\driver\rtc;..\driver\common;..\util;..\app;..\page</IncludePath>
           <LibPath></LibPath>
           <RegisterFilePath></RegisterFilePath>
           <DBRegisterFilePath></DBRegisterFilePath>
@@ -336,7 +336,7 @@
               <MiscControls></MiscControls>
               <Define>STM32F40_41xxx,USE_STDPERIPH_DRIVER,HSE_VALUE=8000000</Define>
               <Undefine></Undefine>
-              <IncludePath>..\firmware\cmsis\core;..\firmware\cmsis\device;..\firmware\driver\inc;..\driver\bl24c512;..\driver\usart;..\driver\I2C;..\driver\AHT20;..\driver\delay;..\driver\SPI;..\driver\st7789;..\driver\font;..\driver\image;..\driver\esp32</IncludePath>
+              <IncludePath>..\board;..\firmware\cmsis\core;..\firmware\cmsis\device;..\firmware\driver\inc;..\driver\usart;..\driver\I2C;..\driver\AHT20;..\driver\delay;..\driver\SPI;..\display\st7789;..\display\font;..\display\image;..\driver\esp32;..\driver\rtc;..\driver\common;..\util;..\app;..\page</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -354,7 +354,7 @@
               <MiscControls></MiscControls>
               <Define></Define>
               <Undefine></Undefine>
-              <IncludePath></IncludePath>
+              <IncludePath>..\board;..\firmware\cmsis\core;..\firmware\cmsis\device;..\firmware\driver\inc;..\driver\usart;..\driver\I2C;..\driver\AHT20;..\driver\delay;..\driver\SPI;..\display\st7789;..\display\font;..\display\image;..\driver\esp32;..\driver\rtc;..\driver\common;..\util;..\app;..\page</IncludePath>
             </VariousControls>
           </Aads>
           <LDads>
@@ -377,6 +377,22 @@
         </TargetArmAds>
       </TargetOption>
       <Groups>
+      <Group>
+      <GroupName>board</GroupName>
+      <Files>
+        <File>
+          <FileName>board.c</FileName>
+          <FileType>1</FileType>
+          <FilePath>..\\board\\board.c</FilePath>
+        </File>
+        <File>
+          <FileName>board.h</FileName>
+          <FileType>5</FileType>
+          <FilePath>..\\board\\board.h</FilePath>
+        </File>
+      </Files>
+    </Group>
+    
         <Group>
           <GroupName>app</GroupName>
           <Files>
@@ -385,21 +401,56 @@
               <FileType>1</FileType>
               <FilePath>..\app\main.c</FilePath>
             </File>
+            <File>
+              <FileName>config.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\app\config.h</FilePath>
+            </File>
+            <File>
+              <FileName>weather.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\app\weather.c</FilePath>
+            </File>
+            <File>
+              <FileName>weather.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\app\weather.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>page</GroupName>
+          <Files>
+            <File>
+              <FileName>page.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\page\page.h</FilePath>
+            </File>
+            <File>
+              <FileName>welcome.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\page\welcome.c</FilePath>
+            </File>
+            <File>
+              <FileName>wifi_connecting.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\page\wifi_connecting.c</FilePath>
+            </File>
+            <File>
+              <FileName>wifi_error.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\page\wifi_error.c</FilePath>
+            </File>
+            <File>
+              <FileName>main_page.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\page\main_page.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
           <GroupName>driver</GroupName>
           <Files>
-            <File>
-              <FileName>bl24c512.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\driver\bl24c512\bl24c512.c</FilePath>
-            </File>
-            <File>
-              <FileName>bl24c512.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\driver\bl24c512\bl24c512.h</FilePath>
-            </File>
             <File>
               <FileName>usart.c</FileName>
               <FileType>1</FileType>
@@ -453,47 +504,117 @@
             <File>
               <FileName>st7789.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\driver\st7789\st7789.c</FilePath>
+              <FilePath>..\display\st7789\st7789.c</FilePath>
             </File>
             <File>
               <FileName>st7789.h</FileName>
               <FileType>5</FileType>
-              <FilePath>..\driver\st7789\st7789.h</FilePath>
+              <FilePath>..\display\st7789\st7789.h</FilePath>
             </File>
             <File>
               <FileName>font.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\driver\font\font.c</FilePath>
+              <FilePath>..\display\font\font.c</FilePath>
             </File>
             <File>
               <FileName>font.h</FileName>
               <FileType>5</FileType>
-              <FilePath>..\driver\font\font.h</FilePath>
+              <FilePath>..\display\font\font.h</FilePath>
             </File>
             <File>
               <FileName>font16.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\driver\font\font16.c</FilePath>
+              <FilePath>..\display\font\font16.c</FilePath>
             </File>
             <File>
-              <FileName>font32.c</FileName>
+              <FileName>font52.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\driver\font\font32.c</FilePath>
+              <FilePath>..\display\font\font52.c</FilePath>
             </File>
             <File>
-              <FileName>font48.c</FileName>
+              <FileName>font20.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\driver\font\font48.c</FilePath>
-            </File>
-            <File>
-              <FileName>cat_photo.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\driver\image\cat_photo.c</FilePath>
+              <FilePath>..\display\font\font20.c</FilePath>
             </File>
             <File>
               <FileName>image.h</FileName>
               <FileType>5</FileType>
-              <FilePath>..\driver\image\image.h</FilePath>
+              <FilePath>..\display\image\image.h</FilePath>
+            </File>
+            <File>
+              <FileName>main_bg.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\display\image\main_bg.c</FilePath>
+            </File>
+                        <File>
+              <FileName>status_wifi_20x20.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\display\image\batch\status_wifi_20x20.c</FilePath>
+            </File>
+            <File>
+              <FileName>status_wifi_off_20x20.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\display\image\batch\status_wifi_off_20x20.c</FilePath>
+            </File>
+            <File>
+              <FileName>period_day_20x20.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\display\image\batch\period_day_20x20.c</FilePath>
+            </File>
+            <File>
+              <FileName>period_night_20x20.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\display\image\batch\period_night_20x20.c</FilePath>
+            </File>
+            <File>
+              <FileName>weather_sunny_44x44.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\display\image\batch\weather_sunny_44x44.c</FilePath>
+            </File>
+            <File>
+              <FileName>weather_partly_cloudy_44x44.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\display\image\batch\weather_partly_cloudy_44x44.c</FilePath>
+            </File>
+            <File>
+              <FileName>weather_cloudy_44x44.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\display\image\batch\weather_cloudy_44x44.c</FilePath>
+            </File>
+            <File>
+              <FileName>weather_light_rain_44x44.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\display\image\batch\weather_light_rain_44x44.c</FilePath>
+            </File>
+            <File>
+              <FileName>weather_heavy_rain_44x44.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\display\image\batch\weather_heavy_rain_44x44.c</FilePath>
+            </File>
+            <File>
+              <FileName>weather_snow_44x44.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\display\image\batch\weather_snow_44x44.c</FilePath>
+            </File>
+            <File>
+              <FileName>weather_fog_44x44.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\display\image\batch\weather_fog_44x44.c</FilePath>
+            </File>
+            <File>
+              <FileName>weather_thunderstorm_44x44.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\display\image\batch\weather_thunderstorm_44x44.c</FilePath>
+            </File>
+            <File>
+              <FileName>data_thermometer_24x24.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\display\image\batch\data_thermometer_24x24.c</FilePath>
+            </File>
+            <File>
+              <FileName>data_humidity_24x24.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\display\image\batch\data_humidity_24x24.c</FilePath>
             </File>
             <File>
               <FileName>esp32.c</FileName>
@@ -504,6 +625,46 @@
               <FileName>esp32.h</FileName>
               <FileType>5</FileType>
               <FilePath>..\driver\esp32\esp32.h</FilePath>
+            </File>
+            <File>
+              <FileName>rtc.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\driver\rtc\rtc.c</FilePath>
+            </File>
+            <File>
+              <FileName>rtc.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\driver\rtc\rtc.h</FilePath>
+            </File>
+            <File>
+              <FileName>wifi_error_page.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\display\image\wifi_error_page.c</FilePath>
+            </File>
+            <File>
+              <FileName>datetime.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\driver\common\datetime.h</FilePath>
+            </File>
+        <File>
+              <FileName>sensor.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\driver\common\sensor.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>util</GroupName>
+          <Files>
+            <File>
+              <FileName>json.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\util\json.c</FilePath>
+            </File>
+            <File>
+              <FileName>json.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\util\json.h</FilePath>
             </File>
           </Files>
         </Group>

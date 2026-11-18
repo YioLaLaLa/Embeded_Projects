@@ -259,3 +259,92 @@ void st7789_draw_rgb(uint16_t x, uint16_t y, uint16_t w, uint16_t h, const uint8
     }
     CS_HIGH();
 }
+
+/* 色键透明画全彩位图：逐行扫描，等于 key 色的像素跳过(露出背景)，
+   连续非 key 像素合成一段设一次窗口流式写，减少 SPI 命令开销。
+   图标 RGB565 数据自带黑底，用 key=ST7789_BLACK 即可只保留图形。*/
+void st7789_draw_rgb_transparent(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
+                                 const uint8_t *img, uint16_t key)
+{
+    uint8_t khi = (uint8_t)(key >> 8);
+    uint8_t klo = (uint8_t)(key & 0xFF);
+
+    for(uint16_t r = 0; r < h; r++)
+    {
+        uint16_t c = 0;
+        while(c < w)
+        {
+            uint32_t idx = (uint32_t)(r * w + c) * 2;
+            /* 跳过 key 色像素 */
+            if(img[idx] == klo && img[idx + 1] == khi) { c++; continue; }
+            /* 找连续非 key 段的末尾 */
+            uint16_t start = c;
+            while(c < w)
+            {
+                uint32_t k = (uint32_t)(r * w + c) * 2;
+                if(img[k] == klo && img[k + 1] == khi) break;
+                c++;
+            }
+            st7789_set_window(x + start, y + r, x + c - 1, y + r);
+            CS_LOW();
+            DC_DAT();
+            for(uint16_t s = start; s < c; s++)
+            {
+                uint32_t k = (uint32_t)(r * w + s) * 2;
+                spi_rw(&lcd_spi, img[k + 1]);
+                spi_rw(&lcd_spi, img[k]);
+            }
+            CS_HIGH();
+        }
+    }
+}
+
+/* 透明画单色位图：只画 bit=1(笔画 fg)，bit=0(背景)跳过不写，露出底下背景。
+   用于文字叠加在背景图上而不产生黑色底框。*/
+void st7789_draw_bitmap_transparent(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
+                                    const uint8_t *bmp, uint16_t fg)
+{
+    uint16_t row_bytes = (w + 7) / 8;
+    uint8_t hi = (uint8_t)(fg >> 8);
+    uint8_t lo = (uint8_t)(fg & 0xFF);
+
+    for(uint16_t r = 0; r < h; r++)
+    {
+        uint16_t c = 0;
+        while(c < w)
+        {
+            if(!((bmp[r * row_bytes + c / 8] >> (7 - c % 8)) & 0x01)) { c++; continue; }
+            uint16_t start = c;
+            while(c < w && ((bmp[r * row_bytes + c / 8] >> (7 - c % 8)) & 0x01)) c++;
+            st7789_set_window(x + start, y + r, x + c - 1, y + r);
+            CS_LOW();
+            DC_DAT();
+            for(uint16_t s = start; s < c; s++)
+            {
+                spi_rw(&lcd_spi, hi);
+                spi_rw(&lcd_spi, lo);
+            }
+            CS_HIGH();
+        }
+    }
+}
+
+/* 从大图 img(宽 img_w，屏幕坐标与图内坐标一致，即图画在(0,0)) 取 (x,y) 起
+   w×h 子区域重绘到屏幕同位置，用于透明文字/图标刷新前擦掉上一帧残影。*/
+void st7789_restore_bg(const uint8_t *img, uint16_t img_w,
+                       uint16_t x, uint16_t y, uint16_t w, uint16_t h)
+{
+    st7789_set_window(x, y, x + w - 1, y + h - 1);
+    CS_LOW();
+    DC_DAT();
+    for(uint16_t r = 0; r < h; r++)
+    {
+        const uint8_t *src = &img[((uint32_t)(y + r) * img_w + x) * 2];
+        for(uint16_t c = 0; c < w; c++)
+        {
+            spi_rw(&lcd_spi, src[c * 2 + 1]);
+            spi_rw(&lcd_spi, src[c * 2]);
+        }
+    }
+    CS_HIGH();
+}

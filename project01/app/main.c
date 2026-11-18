@@ -1,96 +1,92 @@
 #include <stdint.h>
-#include <stdio.h>
 #include <string.h>
-#include "stm32f4xx.h"
 #include "delay.h"
 #include "usart.h"
-#include "st7789.h"
-#include "font.h"
-#include "image.h"
 #include "esp32.h"
+#include "sensor.h"
+#include "aht20.h"
+#include "rtc.h"
+#include "datetime.h"
+#include "config.h"
+#include "weather.h"
+#include "page.h"
+#include "board.h"
 
-/* ===== WiFi / 天气 / NTP 配置 ===== */
-#define WIFI_SSID  "Yio"
-#define WIFI_PWD   "LYYLYYhahaha"
-#define WX_HOST    "api.seniverse.com"
-#define WX_PATH    "/v3/weather/now.json?key=ShtD5k30cyCu4uhiG&location=WTTDPCGXTWUS&language=en&unit=c"
-#define NTP_SERVER "ntp.aliyun.com"
-#define NTP_TZ     8            /* 东八区 */
-
-/* 解析出来的天气数据 */
-typedef struct {
-	char city[32];   /* 城市名 location.name */
-	char text[32];   /* 天气现象 now.text */
-	char code[8];    /* 天气代码 now.code，将来映射图标 */
-	char temp[8];    /* 温度 now.temperature */
-} Weather;
-
+/* main 只负责：板级初始化 → 采集一次(联网/天气/对时) → 进主循环刷新。
+   外设初始化下沉到 board，界面面向 page_t 对象，modem 面向 esp32_modem 实例，
+   传感器面向 sensor_t 接口，配置集中在 config.h。 */
 int main(void)
 {
-	Delay_Init();
-	USART1_Init();
-	USART1_SendString("\r\n===== Weather Clock =====\r\n");
+	page_t *pg;
 
-	st7789_init();
-	st7789_fill(ST7789_BLACK);
+	board_lowlevel_init();            /* 延时 + 调试串口，之后才能打日志 */
+	board_init();                     /* LCD / ESP32 串口 / I2C+AHT20 / RTC */
 
-	esp32_init();
-	static char buf[1200];       /* 大缓冲放 static，避免占用栈 */
+	pg = page_welcome();              /* 开机欢迎页，联网/取天气期间一直显示 */
+	pg->enter(pg);
+
+	static char buf[192];             /* 连 WiFi 的过程回复用，够大即可 */
 	Weather  w;
 	DateTime dt;
 	char ip[24] = "-";
+	uint8_t last_hum_sec = 0xFF;      /* 上次读 AHT20 的秒，防同一秒重读 */
 
 	/* --- 连 WiFi + 查 IP --- */
 	USART1_SendString("[WIFI] connecting...\r\n");
-	if(esp32_connect_wifi(WIFI_SSID, WIFI_PWD, buf, sizeof(buf))) {
+	pg = page_wifi_connecting();      /* 切页 = 换指针 */
+	pg->enter(pg);
+	bool wifi_ok = esp32_connect_wifi(&esp32_modem, WIFI_SSID, WIFI_PWD, buf, sizeof(buf));
+	if(wifi_ok) {
 		USART1_SendString("[WIFI] connected\r\n");
-		if(esp32_get_ip(ip, sizeof(ip))) {
+		if(esp32_get_ip(&esp32_modem, ip, sizeof(ip))) {
 			USART1_SendString("[WIFI] IP = ");
 			USART1_SendString(ip);
 			USART1_SendString("\r\n");
 		}
 	} else {
 		USART1_SendString("[WIFI] FAIL\r\n");
+		pg = page_wifi_error();       /* WiFi 失败，切错误页 */
+		pg->enter(pg);
+		Delay_ms(3000);               /* 停留 3 秒让用户看清 */
 	}
 
-	/* --- 取天气，解析进 w --- */
-	strcpy(w.city,"--"); strcpy(w.text,"N/A"); strcpy(w.code,"-"); strcpy(w.temp,"--");
+	/* --- 取天气(内部 HTTP GET + JSON 解析) --- */
 	USART1_SendString("[HTTP] GET weather...\r\n");
-	if(esp32_http_get(WX_HOST, WX_PATH, buf, sizeof(buf))) {
-		json_get_str(buf, "name",        w.city, sizeof(w.city));
-		json_get_str(buf, "text",        w.text, sizeof(w.text));
-		json_get_str(buf, "code",        w.code, sizeof(w.code));
-		json_get_str(buf, "temperature", w.temp, sizeof(w.temp));
+	if(weather_fetch(&w)) {
+		USART1_SendString("[WX] ");
+		USART1_SendString(w.city); USART1_SendString(" ");
+		USART1_SendString(w.text); USART1_SendString(" ");
+		USART1_SendString(w.temp); USART1_SendString("C\r\n");
 	} else {
 		USART1_SendString("[HTTP] FAIL\r\n");
 	}
 
-	/* --- SNTP 对时，解析进 dt --- */
+	/* --- SNTP 对时 → 写入 RTC(RTC 已在 board_init 启动，自主走时) --- */
 	memset(&dt, 0, sizeof(dt));
-	esp32_sntp_cfg(NTP_TZ, NTP_SERVER);
-	Delay_ms(4000);                 /* 等 SNTP 后台同步几秒 */
-	if(!esp32_sntp_read(&dt))
+	esp32_sntp_cfg(&esp32_modem, NTP_TZ, NTP_SERVER);
+	Delay_ms(4000);                   /* 等 SNTP 后台同步几秒 */
+	if(!esp32_sntp_read(&esp32_modem, &dt))
 		USART1_SendString("[TIME] SNTP fail/not synced\r\n");
+	if(dt.year > 2000) {
+		rtc_set(&dt);                 /* SNTP 结果直接写 RTC，DateTime 统一无需转换 */
+		USART1_SendString("[RTC] synced from SNTP\r\n");
+	}
 
-	/* --- 串口打印汇总 --- */
-	USART1_SendString("[WX] ");
-	USART1_SendString(w.city); USART1_SendString(" ");
-	USART1_SendString(w.text); USART1_SendString(" ");
-	USART1_SendString(w.temp); USART1_SendString("C\r\n");
-	snprintf(buf, sizeof(buf), "[TIME] %04d-%02d-%02d %s %02d:%02d:%02d\r\n",
-	         dt.year, dt.month, dt.day, dt.weekday, dt.hour, dt.min, dt.sec);
-	USART1_SendString(buf);
+	/* --- 切到时钟页，主循环周期驱动 tick --- */
+	pg = page_main(&w, wifi_ok);      /* 注入天气/WiFi 状态，拿回页面对象 */
+	pg->enter(pg);
+	while(1)
+	{
+		rtc_get(&dt);
+		pg->tick(pg, &dt);              /* 分/时/天/秒变化才重绘（秒=冒号闪烁）*/
 
-	/* --- LCD 显示：日期 / 时间 / 城市天气 / 温度 --- */
-	char line[48];
-	snprintf(line, sizeof(line), "%04d-%02d-%02d %s", dt.year, dt.month, dt.day, dt.weekday);
-	font_show_string(10, 40, line, ST7789_WHITE,  ST7789_BLACK, 16);
-	snprintf(line, sizeof(line), "%02d:%02d:%02d", dt.hour, dt.min, dt.sec);
-	font_show_string(10, 80, line, ST7789_GREEN,  ST7789_BLACK, 16);
-	snprintf(line, sizeof(line), "%s  %s", w.city, w.text);
-	font_show_string(10, 140, line, ST7789_CYAN,   ST7789_BLACK, 16);
-	snprintf(line, sizeof(line), "%s C", w.temp);
-	font_show_string(10, 180, line, ST7789_YELLOW, ST7789_BLACK, 16);
-
-	while(1) { }
+		/* 每 HUM_READ_PERIOD_S 秒经 sensor_t 接口读一次，刷新湿度卡；失败保留上次值 */
+		if(dt.sec != last_hum_sec && dt.sec % HUM_READ_PERIOD_S == 0) {
+			float rh, tc;
+			last_hum_sec = dt.sec;
+			if(aht20_sensor.read(&rh, &tc))
+				page_main_set_humidity((int)(rh + 0.5f));
+		}
+		Delay_ms(50);                 /* 降低轮询频率，够捕捉秒变化又不空转 */
+	}
 }
