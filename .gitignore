@@ -62,3 +62,6 @@ project01/datasheet/rm0090*.pdf
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# Claude Code local settings
+.claude/settings.local.json

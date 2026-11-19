@@ -1,5 +1,6 @@
 #include "esp32.h"
 #include "stm32f4xx.h"
+#include "delay.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -7,19 +8,39 @@
    全局变量零初始化，usart 在 esp32_init 里赋值。 */
 esp32_t esp32_modem;
 
-/* ===== USART2 底层：PA2=TX(AF7), PA3=RX(AF7)，USART2 挂在 APB1 ===== */
+/* ===== USART2 底层：PA2=TX(AF7), PA3=RX(AF7)，USART2 挂在 APB1 =====
+   RX 由 DMA1 Stream5 循环收进 e->rx_dma，IDLE 中断搬进 e->rx_ring；
+   读取侧只从内存环取字节，不碰 RXNE。 */
 
-/* 读一个字节，带循环计数超时(非精确毫秒)；收到返回 true，超时返回 false。 */
-static bool esp32_read_byte(esp32_t *e, uint8_t *b, uint32_t timeout)
+/* 从接收环取一个字节；timeout 单位微秒(50µs 粒度轮询)。环空则等到超时。 */
+static bool esp32_read_byte(esp32_t *e, uint8_t *b, uint32_t timeout_us)
 {
-    while(USART_GetFlagStatus(e->usart, USART_FLAG_RXNE) == RESET)
-        if(--timeout == 0) return false;
-    *b = (uint8_t)USART_ReceiveData(e->usart);   /* 读 DR 兼清 RXNE */
-    return true;
+    while(timeout_us)
+    {
+        if(e->rx_tail != e->rx_head)
+        {
+            *b = (uint8_t)e->rx_ring[e->rx_tail];
+            e->rx_tail = (uint16_t)((e->rx_tail + 1) % ESP32_RX_RING_SIZE);
+            return true;
+        }
+        Delay_us(50);
+        timeout_us = (timeout_us > 50) ? (timeout_us - 50) : 0;
+    }
+    return false;
+}
+
+/* 丢弃已收数据：清软件环 + 同步 DMA 位置(丢弃 DMA 缓冲里尚未搬运的残留)。
+   发新命令前调用，防上一条回复的尾字节被误判进新回复。 */
+static void esp32_rx_flush(esp32_t *e)
+{
+    NVIC_DisableIRQ(USART2_IRQn);   /* 短暂停搬运，防两个指针与 ISR 并发更新 */
+    e->rx_tail = e->rx_head;
+    e->rx_dma_pos = (uint16_t)((ESP32_RX_DMA_SIZE - DMA_GetCurrDataCounter(DMA1_Stream5)) % ESP32_RX_DMA_SIZE);
+    NVIC_EnableIRQ(USART2_IRQn);
 }
 
 /* 持续读入 buf，直到出现 endmark / buf 满 / 每字节超时；返回已读长度并补 '\0'。
-   endmark=NULL 时只按超时收。per_byte_to 是相邻两字节间允许的最大空转圈数。 */
+   endmark=NULL 时只按超时收。per_byte_to 是相邻两字节间允许的最大等待(微秒)。 */
 static uint16_t esp32_read_until(esp32_t *e, const char *endmark, char *buf, uint16_t size, uint32_t per_byte_to)
 {
     uint16_t n = 0;
@@ -67,6 +88,35 @@ void esp32_init(esp32_t *e)
     USART_Cmd(USART2, ENABLE);
 
     e->usart = USART2;                                 /* 实例绑定所挂串口 */
+
+    /* ---- RX DMA：DMA1 Stream5 Ch4 循环收，IDLE 中断搬进软件环 ---- */
+    RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_DMA1, ENABLE);
+    DMA_Cmd(DMA1_Stream5, DISABLE);
+    DMA_InitTypeDef d;
+    DMA_StructInit(&d);
+    d.DMA_Channel            = DMA_Channel_4;          /* USART2_RX = DMA1 Stream5 Ch4 */
+    d.DMA_PeripheralBaseAddr = (uint32_t)&USART2->DR;
+    d.DMA_Memory0BaseAddr    = (uint32_t)e->rx_dma;
+    d.DMA_DIR                = DMA_DIR_PeripheralToMemory;
+    d.DMA_BufferSize         = ESP32_RX_DMA_SIZE;
+    d.DMA_PeripheralInc      = DMA_PeripheralInc_Disable;
+    d.DMA_MemoryInc          = DMA_MemoryInc_Enable;
+    d.DMA_PeripheralDataSize = DMA_PeripheralDataSize_Byte;
+    d.DMA_MemoryDataSize     = DMA_MemoryDataSize_Byte;
+    d.DMA_Mode               = DMA_Mode_Circular;      /* 循环：永不需重启，满 512 自动回卷 */
+    d.DMA_Priority           = DMA_Priority_High;
+    DMA_Init(DMA1_Stream5, &d);
+    DMA_Cmd(DMA1_Stream5, ENABLE);
+    USART_DMACmd(USART2, USART_DMAReq_Rx, ENABLE);
+
+    /* 总线空闲中断：一串字节收完后一次性搬运，读取侧零丢字节 */
+    USART_ITConfig(USART2, USART_IT_IDLE, ENABLE);
+    NVIC_InitTypeDef nv;
+    nv.NVIC_IRQChannel                   = USART2_IRQn;
+    nv.NVIC_IRQChannelPreemptionPriority = 1;
+    nv.NVIC_IRQChannelSubPriority        = 0;
+    nv.NVIC_IRQChannelCmd                = ENABLE;
+    NVIC_Init(&nv);
 }
 
 void esp32_send(esp32_t *e, const char *s)
@@ -79,12 +129,11 @@ void esp32_send(esp32_t *e, const char *s)
 }
 
 /* 内部：发 AT 指令(补 \r\n)，读到出现 OK 或 ERROR 为止。含 OK 且无 ERROR 返回 true。
-   per_byte_to 越大，越能容忍慢指令(如 CWJAP 联网要几秒)。 */
+   per_byte_to 越大，越能容忍慢指令(如 CWJAP 联网要几秒)。单位：微秒。 */
 static bool esp32_at_to(esp32_t *e, const char *cmd, char *resp, uint16_t resp_size, uint32_t per_byte_to)
 {
-    /* 清空残留接收数据 */
-    while(USART_GetFlagStatus(e->usart, USART_FLAG_RXNE) != RESET)
-        USART_ReceiveData(e->usart);
+    /* 丢弃残留接收数据(环 + DMA 缓冲) */
+    esp32_rx_flush(e);
 
     esp32_send(e, cmd);
     esp32_send(e, "\r\n");
@@ -109,16 +158,16 @@ static bool esp32_at_to(esp32_t *e, const char *cmd, char *resp, uint16_t resp_s
 
 bool esp32_at(esp32_t *e, const char *cmd, char *resp, uint16_t resp_size)
 {
-    return esp32_at_to(e, cmd, resp, resp_size, 3000000);   /* 普通快指令 ~1s 超时 */
+    return esp32_at_to(e, cmd, resp, resp_size, 1000000);   /* 普通快指令 1s 超时 */
 }
 
 /* 连 WiFi：设 STA 模式 + AT+CWJAP。成功返回 true，过程回复存 resp。
    注意：CWJAP 联网可能要几秒，故用较大超时。 */
 bool esp32_connect_wifi(esp32_t *e, const char *ssid, const char *pwd, char *resp, uint16_t resp_size)
 {
-    esp32_at_to(e, "AT+CWMODE=1", e->tmp, sizeof(e->tmp), 3000000);   /* STA 模式 */
+    esp32_at_to(e, "AT+CWMODE=1", e->tmp, sizeof(e->tmp), 1000000);    /* STA 模式 */
     snprintf(e->cmd, sizeof(e->cmd), "AT+CWJAP=\"%s\",\"%s\"", ssid, pwd);
-    bool ok = esp32_at_to(e, e->cmd, e->tmp, sizeof(e->tmp), 120000000);   /* 联网，超时要大 */
+    bool ok = esp32_at_to(e, e->cmd, e->tmp, sizeof(e->tmp), 15000000);   /* 联网 15s，超时要大 */
     if(resp != NULL && resp_size > 0) snprintf(resp, resp_size, "%s", e->tmp);
     return ok;
 }
@@ -139,7 +188,7 @@ bool esp32_http_get(esp32_t *e, const char *host, const char *path, char *resp, 
 
     /* 建 TCP 连接到 80 端口 */
     snprintf(e->cmd, sizeof(e->cmd), "AT+CIPSTART=\"TCP\",\"%s\",80", host);
-    if(!esp32_at_to(e, e->cmd, e->tmp, sizeof(e->tmp), 30000000))
+    if(!esp32_at_to(e, e->cmd, e->tmp, sizeof(e->tmp), 8000000))       /* TCP 建连 8s */
     {
         if(resp) snprintf(resp, resp_size, "CIPSTART fail: %s", e->tmp);
         return false;
@@ -149,11 +198,11 @@ bool esp32_http_get(esp32_t *e, const char *host, const char *path, char *resp, 
     snprintf(e->cmd, sizeof(e->cmd), "AT+CIPSEND=%d", reqlen);
     esp32_send(e, e->cmd);
     esp32_send(e, "\r\n");
-    esp32_read_until(e, ">", e->tmp, sizeof(e->tmp), 5000000);
+    esp32_read_until(e, ">", e->tmp, sizeof(e->tmp), 2000000);         /* 等 ">" 提示符 2s */
 
-    /* 发原始 HTTP 报文，再收完整回复(直到 CLOSED) */
+    /* 发原始 HTTP 报文，再收完整回复(直到 CLOSED，10s) */
     esp32_send(e, e->req);
-    esp32_read_until(e, "CLOSED", resp, resp_size, 40000000);
+    esp32_read_until(e, "CLOSED", resp, resp_size, 10000000);
 
     esp32_at(e, "AT+CIPCLOSE", e->tmp, sizeof(e->tmp));
     return (resp != NULL) && (strstr(resp, "200") != NULL);
@@ -224,4 +273,31 @@ bool esp32_sntp_read(esp32_t *e, DateTime *dt)
     while(*y >= '0' && *y <= '9' && cnt < 4) { year = year*10 + (*y - '0'); y++; cnt++; }
     dt->year = (uint16_t)year;
     return dt->year > 2000;                   /* 已同步(非 1970)才算成功 */
+}
+
+/* USART2 总线空闲中断：一串字节到齐(IDLE)后，把 DMA 缓冲新到部分搬进软件环。
+   环满丢新字节(不覆盖未读数据)；读取侧在主循环只消费环，与硬件天然隔离。 */
+void USART2_IRQHandler(void)
+{
+    esp32_t *e = &esp32_modem;
+    if(USART_GetITStatus(e->usart, USART_IT_IDLE) != RESET)
+    {
+        uint16_t pos, last, next;
+        (void)e->usart->SR;                   /* 清 IDLE：先读 SR 再读 DR */
+        (void)e->usart->DR;
+
+        pos  = (uint16_t)((ESP32_RX_DMA_SIZE - DMA_GetCurrDataCounter(DMA1_Stream5)) % ESP32_RX_DMA_SIZE);
+        last = e->rx_dma_pos;
+        while(last != pos)
+        {
+            next = (uint16_t)((e->rx_head + 1) % ESP32_RX_RING_SIZE);
+            if(next != e->rx_tail)            /* 环未满才写入 */
+            {
+                e->rx_ring[e->rx_head] = (char)e->rx_dma[last];
+                e->rx_head = next;
+            }
+            last = (uint16_t)((last + 1) % ESP32_RX_DMA_SIZE);
+        }
+        e->rx_dma_pos = pos;
+    }
 }

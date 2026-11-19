@@ -11,6 +11,61 @@ static spi_t lcd_spi = {
     GPIO_AF_SPI2
 };
 
+/* ---- 像素突发通道：固定 8 位帧 + 字节 DMA(SPI2_TX) ----
+   图片小端存储(lo,hi)，ST7789 要高字节先发：分块换序进 s_pxbuf 后整段 DMA。
+   不切 16 位帧——F4 在 8 位模式下写半字 DR 会打包为“低字节先发两帧”
+   (RM0090 §28.5.9)，DFF 切换一旦未按预期生效，每像素两字节颠倒→颜色全错。
+   命令路径与像素路径同帧宽，无切换风险。 */
+#define LCD_PX_CHUNK   480          /* 每批换算像素数(缓冲 960B)，须 ≥ 屏宽 */
+#define LCD_DMA_EN     1            /* 0=逐字节轮询(与旧版行为一致)，A/B 对照用 */
+
+static uint8_t s_pxbuf[LCD_PX_CHUNK * 2];
+
+/* 已排好序的字节流出口：DMA 开走 spi_dma_send8，关则逐字节轮询 */
+static void px_out(const uint8_t *buf, uint32_t nbytes)
+{
+#if LCD_DMA_EN
+    spi_dma_send8(&lcd_spi, buf, nbytes);
+#else
+    for(uint32_t i = 0; i < nbytes; i++)
+        spi_rw(&lcd_spi, buf[i]);
+#endif
+}
+
+static void px_flush(void) { spi_flush_rx(&lcd_spi); }   /* 只发不收会 RX 溢出，突发后清一次 */
+
+/* 纯色像素：分块填 hi,lo 图案进缓冲后发送 */
+static void px_send_color(uint16_t color, uint32_t pixels)
+{
+    uint8_t hi = (uint8_t)(color >> 8), lo = (uint8_t)color;
+    while(pixels)
+    {
+        uint32_t n = (pixels > LCD_PX_CHUNK) ? LCD_PX_CHUNK : pixels;
+        for(uint32_t i = 0; i < n; i++) { s_pxbuf[i * 2] = hi; s_pxbuf[i * 2 + 1] = lo; }
+        px_out(s_pxbuf, n * 2);
+        pixels -= n;
+    }
+    px_flush();
+}
+
+/* 小端图片段：分块换序(hi 先发)进缓冲后发送；对源地址无对齐要求 */
+static void px_send_le(const uint8_t *src, uint32_t pixels)
+{
+    while(pixels)
+    {
+        uint32_t n = (pixels > LCD_PX_CHUNK) ? LCD_PX_CHUNK : pixels;
+        for(uint32_t i = 0; i < n; i++)
+        {
+            s_pxbuf[i * 2]     = src[i * 2 + 1];   /* 高字节先发 */
+            s_pxbuf[i * 2 + 1] = src[i * 2];
+        }
+        px_out(s_pxbuf, n * 2);
+        src    += n * 2;
+        pixels -= n;
+    }
+    px_flush();
+}
+
 /* ==================== ST7789 命令定义（数据手册 9.1 / 9.2 节）==================== */
 #define ST7789_SWRESET   0x01   /* Software Reset */
 #define ST7789_SLPOUT    0x11   /* Sleep Out */
@@ -181,22 +236,14 @@ static void st7789_set_window(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1
     st7789_write_cmd(0x2C);                 /* RAMWR：开始写显存 */
 }
 
-/* 用单一颜色(RGB565)填充整屏：设窗后 CS 保持低、DC=1，连续发像素 */
+/* 用单一颜色(RGB565)填充整屏：设窗后分块发 hi,lo 图案 */
 void st7789_fill(uint16_t color)
 {
     st7789_set_window(0, 0, ST7789_WIDTH - 1, ST7789_HEIGHT - 1);
 
-    uint8_t hi = (uint8_t)(color >> 8);     /* RGB565 高字节先发 */
-    uint8_t lo = (uint8_t)(color & 0xFF);
-    uint32_t total = (uint32_t)ST7789_WIDTH * ST7789_HEIGHT;
-
     CS_LOW();
     DC_DAT();                               /* 后续都是像素数据 */
-    for(uint32_t i = 0; i < total; i++)
-    {
-        spi_rw(&lcd_spi, hi);                 /* 每像素 2 字节 */
-        spi_rw(&lcd_spi, lo);
-    }
+    px_send_color(color, (uint32_t)ST7789_WIDTH * ST7789_HEIGHT);
     CS_HIGH();
 }
 
@@ -205,27 +252,25 @@ void st7789_fill_rect(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16
 {
     st7789_set_window(x0, y0, x1, y1);
 
-    uint8_t hi = (uint8_t)(color >> 8);
-    uint8_t lo = (uint8_t)(color & 0xFF);
     uint32_t total = (uint32_t)(x1 - x0 + 1) * (y1 - y0 + 1);   /* 窗口内像素数 */
 
     CS_LOW();
     DC_DAT();
-    for(uint32_t i = 0; i < total; i++)
-    {
-        spi_rw(&lcd_spi, hi);
-        spi_rw(&lcd_spi, lo);
-    }
+    px_send_color(color, total);
     CS_HIGH();
 }
 
-/* 在 (x,y) 画 w×h 单色位图：bit=1 用 fg，bit=0 用 bg（行列式/MSB先）*/
+/* 在 (x,y) 画 w×h 单色位图：bit=1 用 fg，bit=0 用 bg（行列式/MSB先）。
+   逐行展开进 s_pxbuf 后整行 DMA。w 须 ≤ LCD_PX_CHUNK(480)，字体最大 32 满足。 */
 void st7789_draw_bitmap(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
                         const uint8_t *bmp, uint16_t fg, uint16_t bg)
 {
     st7789_set_window(x, y, x + w - 1, y + h - 1);
 
     uint16_t row_bytes = (w + 7) / 8;              /* 每行字节数 */
+    uint8_t fghi = (uint8_t)(fg >> 8), fglo = (uint8_t)fg;
+    uint8_t bghi = (uint8_t)(bg >> 8), bglo = (uint8_t)bg;
+
     CS_LOW();
     DC_DAT();
     for(uint16_t r = 0; r < h; r++)
@@ -234,29 +279,25 @@ void st7789_draw_bitmap(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
         {
             uint8_t byte = bmp[r * row_bytes + c / 8];
             uint8_t bit  = (byte >> (7 - c % 8)) & 0x01;   /* MSB first */
-            uint16_t color = bit ? fg : bg;
-            spi_rw(&lcd_spi, (uint8_t)(color >> 8));
-            spi_rw(&lcd_spi, (uint8_t)(color & 0xFF));
+            s_pxbuf[c * 2]     = bit ? fghi : bghi;
+            s_pxbuf[c * 2 + 1] = bit ? fglo : bglo;
         }
+        px_out(s_pxbuf, (uint32_t)w * 2);
     }
+    px_flush();
     CS_HIGH();
 }
 
-/* 在 (x,y) 画 w×h 全彩位图：img 是 RGB565 字节流(每像素2字节)。
-   取模软件导出为小端(低字节在前)，而 ST7789 要高字节先发，故每像素交换两字节。
-   若交换后红蓝仍互反，则是面板 RGB/BGR 问题，改 MADCTL(ST7789_ORIENTATION) 的 BGR 位。*/
+/* 在 (x,y) 画 w×h 全彩位图：img 是 RGB565 字节流(每像素2字节，小端)。
+   分块换序后 DMA 发送，高字节先发。若颜色红蓝互反，是面板 RGB/BGR 问题，
+   改 MADCTL 的 BGR 位。 */
 void st7789_draw_rgb(uint16_t x, uint16_t y, uint16_t w, uint16_t h, const uint8_t *img)
 {
     st7789_set_window(x, y, x + w - 1, y + h - 1);
 
-    uint32_t pixels = (uint32_t)w * h;   /* 像素数 */
     CS_LOW();
     DC_DAT();
-    for(uint32_t i = 0; i < pixels; i++)
-    {
-        spi_rw(&lcd_spi, img[i * 2 + 1]);   /* 先发数组里的第二字节(高字节) */
-        spi_rw(&lcd_spi, img[i * 2]);       /* 再发第一字节(低字节) */
-    }
+    px_send_le(img, (uint32_t)w * h);
     CS_HIGH();
 }
 
@@ -288,12 +329,8 @@ void st7789_draw_rgb_transparent(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
             st7789_set_window(x + start, y + r, x + c - 1, y + r);
             CS_LOW();
             DC_DAT();
-            for(uint16_t s = start; s < c; s++)
-            {
-                uint32_t k = (uint32_t)(r * w + s) * 2;
-                spi_rw(&lcd_spi, img[k + 1]);
-                spi_rw(&lcd_spi, img[k]);
-            }
+            /* 段起点字节偏移恒为偶数；字节 DMA 对地址无对齐要求 */
+            px_send_le(&img[(uint32_t)(r * w + start) * 2], c - start);
             CS_HIGH();
         }
     }
@@ -305,8 +342,6 @@ void st7789_draw_bitmap_transparent(uint16_t x, uint16_t y, uint16_t w, uint16_t
                                     const uint8_t *bmp, uint16_t fg)
 {
     uint16_t row_bytes = (w + 7) / 8;
-    uint8_t hi = (uint8_t)(fg >> 8);
-    uint8_t lo = (uint8_t)(fg & 0xFF);
 
     for(uint16_t r = 0; r < h; r++)
     {
@@ -319,11 +354,7 @@ void st7789_draw_bitmap_transparent(uint16_t x, uint16_t y, uint16_t w, uint16_t
             st7789_set_window(x + start, y + r, x + c - 1, y + r);
             CS_LOW();
             DC_DAT();
-            for(uint16_t s = start; s < c; s++)
-            {
-                spi_rw(&lcd_spi, hi);
-                spi_rw(&lcd_spi, lo);
-            }
+            px_send_color(fg, c - start);   /* 纯色段 */
             CS_HIGH();
         }
     }
@@ -337,14 +368,7 @@ void st7789_restore_bg(const uint8_t *img, uint16_t img_w,
     st7789_set_window(x, y, x + w - 1, y + h - 1);
     CS_LOW();
     DC_DAT();
-    for(uint16_t r = 0; r < h; r++)
-    {
-        const uint8_t *src = &img[((uint32_t)(y + r) * img_w + x) * 2];
-        for(uint16_t c = 0; c < w; c++)
-        {
-            spi_rw(&lcd_spi, src[c * 2 + 1]);
-            spi_rw(&lcd_spi, src[c * 2]);
-        }
-    }
+    for(uint16_t r = 0; r < h; r++)      /* 每行段在图内存中连续，逐行发送 */
+        px_send_le(&img[((uint32_t)(y + r) * img_w + x) * 2], w);
     CS_HIGH();
 }
